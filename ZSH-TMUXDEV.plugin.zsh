@@ -21,7 +21,6 @@ if ! hash tmux 2>/dev/null; then
     npm() { command npm "$@"; }
     yarn() { command yarn "$@"; }
     bun() { command bun "$@"; }
-    vite() { command bun "$@"; }
     return 1
 fi
 
@@ -77,7 +76,7 @@ _tmux_dev_wrapper_pkg_mgr_handler() {
     shift
 
     local subcommand="$1"
-    local implicit_run_scripts=("dev" "start" "test" "build" "serve" "watch" "preview" "vite")
+    local implicit_run_scripts=("dev" "start" "test" "build" "serve" "watch" "preview")
     local should_run_in_tmux=false
 
     if [[ "$subcommand" == "run" && -n "$2" ]]; then
@@ -97,4 +96,3 @@ alias pnpm="_tmux_dev_wrapper_pkg_mgr_handler pnpm"
 alias npm="_tmux_dev_wrapper_pkg_mgr_handler npm"
 alias yarn="_tmux_dev_wrapper_pkg_mgr_handler yarn"
 alias bun="_tmux_dev_wrapper_pkg_mgr_handler bun"
-alias vite="_tmux_dev_wrapper_pkg_mgr_handler vite"
