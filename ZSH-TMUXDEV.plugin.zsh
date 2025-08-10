@@ -59,8 +59,6 @@ _tmux_dev_wrapper_run_script() {
     local bottom_pane_id=$(tmux list-panes -t "$new_window_target" -F '#{pane_id}' | tail -n 1)
 
     tmux send-keys -t "$top_pane_id" "clear" C-m
-    tmux send-keys -t "$top_pane_id" "echo '--- Running: ${full_command_to_execute} ---'" C-m
-    tmux send-keys -t "$top_pane_id" "echo '--- From directory: ${current_dir} ---'" C-m
     tmux send-keys -t "$top_pane_id" "$full_command_to_execute" C-m
     tmux select-pane -t "$top_pane_id" -T "$server_pane_title"
 
@@ -71,7 +69,6 @@ _tmux_dev_wrapper_run_script() {
 
     echo "ZSH-TMUXDEV: Command sent to tmux session '${session_name}', window '${window_name}'. Your current terminal is now free."
     echo "ZSH-TMUXDEV: To attach: tmux attach -t ${session_name}"
-    echo "ZSH-TMUXDEV: Inside tmux: Ctrl+b, then 'n'/'p' to switch windows, 'Ctrl+b, then arrow keys' to switch panes."
 }
 
 _tmux_dev_wrapper_pkg_mgr_handler() {
