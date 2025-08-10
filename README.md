@@ -2,8 +2,10 @@
 
 Automatically runs pnpm/npm/yarn/bun scripts (e.g., `pnpm dev`, `npm start`) in a dedicated `tmux` session.
 Each script gets its own `tmux` window with a horizontal split:
-- Top pane: Runs the dev server/script.
-- Bottom pane: An interactive shell in the same project directory for additional commands.
+- Left pane: Runs the dev server/script.
+- Right pane: An interactive shell in the same project directory for additional commands.
+Whenever you run lets say pnpm run dev it will take that command and run that in the same dir 
+but in a new tmux session freeing your current terminal.
 
 ## Requirements
 
