@@ -21,7 +21,7 @@ if ! hash tmux 2>/dev/null; then
     npm() { command npm "$@"; }
     yarn() { command yarn "$@"; }
     bun() { command bun "$@"; }
-    vite() { command vite "$@"; } # FIXED THE TYPO HERE
+    vite() { command vite "$@"; } # Corrected vite fallback
     return 1
 fi
 
@@ -30,7 +30,7 @@ _tmux_dev_wrapper_run_script() {
     local script_name="$3"
     local session_name="TMUXDEV"
     local current_dir="$(pwd)"
-    local full_command_to_execute="command \"$pkg_mgr\" ${@:2}" # Correct quoting for tmux send-keys
+    local full_command_to_execute="command \"$pkg_mgr\" ${@:2}"
 
     local base_window_name="$(basename "$current_dir")-${script_name}-${pkg_mgr}"
     local window_name="$base_window_name"
@@ -44,9 +44,6 @@ _tmux_dev_wrapper_run_script() {
     if (( ${#server_pane_title} > 25 )); then
         server_pane_title="${server_pane_title:0:22}..."
     fi
-
-    # Diagnostic echo for script execution
-    echo "ZSH-TMUXDEV: Redirecting '$full_command_to_execute' to tmux window '$window_name'." >&2
 
     if ! tmux has-session -t "$session_name" 2>/dev/null; then
         echo "ZSH-TMUXDEV: TMUXDEV session '$session_name' does not exist. Creating a new session." >&2
@@ -63,7 +60,6 @@ _tmux_dev_wrapper_run_script() {
     local bottom_pane_id=$(tmux list-panes -t "$new_window_target" -F '#{pane_id}' | tail -n 1)
 
     tmux send-keys -t "$top_pane_id" "clear" C-m
-    # Removed specific echo banners from here as they are no longer desired
     tmux send-keys -t "$top_pane_id" "$full_command_to_execute" C-m
     tmux select-pane -t "$top_pane_id" -T "$server_pane_title"
 
@@ -73,8 +69,6 @@ _tmux_dev_wrapper_run_script() {
     tmux select-pane -t "$top_pane_id"
 
     echo "ZSH-TMUXDEV: Command sent. Your current terminal is now free." >&2
-    echo "ZSH-TMUXDEV: To attach: tmux attach -t ${session_name}" >&2
-    echo "ZSH-TMUXDEV: Inside tmux: Ctrl+b, then 'n'/'p' to switch windows, 'Ctrl+b, then arrow keys' to switch panes." >&2
 }
 
 _tmux_dev_wrapper_pkg_mgr_handler() {
@@ -82,28 +76,22 @@ _tmux_dev_wrapper_pkg_mgr_handler() {
     shift
 
     local subcommand="$1"
-    # Added `vite` to implicit_run_scripts
-    local implicit_run_scripts=("dev" "start" "test" "build" "serve" "watch" "preview" "vite")
+    local implicit_run_scripts=("dev" "start" "test" "build" "serve" "watch" "preview")
     local should_run_in_tmux=false
 
-    # --- DEBUGGING ECHOS ADDED HERE ---
-    echo "DEBUG: Entering _pkg_mgr_wrapper. pkg_mgr_name='$pkg_mgr_name', subcommand='$subcommand', all_args_for_pkg_mgr='${@}'" >&2
-
     if [[ "$subcommand" == "run" && -n "$2" ]]; then
-        echo "DEBUG: Condition 1 (explicit 'run') met for '$pkg_mgr_name'." >&2
         should_run_in_tmux=true
         _tmux_dev_wrapper_run_script "$pkg_mgr_name" "$@"
     elif [[ -n "$subcommand" && " ${implicit_run_scripts[*]} " =~ " ${subcommand} " ]]; then
-        echo "DEBUG: Condition 2 (implicit run) met for '$pkg_mgr_name' with subcommand '$subcommand'." >&2
         should_run_in_tmux=true
         _tmux_dev_wrapper_run_script "$pkg_mgr_name" "run" "$@"
+    elif [[ "$pkg_mgr_name" == "vite" && -z "$subcommand" ]]; then
+        should_run_in_tmux=true
+        _tmux_dev_wrapper_run_script "$pkg_mgr_name" "run" "dev" "$@"
     fi
 
     if ! $should_run_in_tmux; then
-        echo "DEBUG: Command '$pkg_mgr_name $*' not intercepted by wrapper. Running directly." >&2
         command "$pkg_mgr_name" "$@"
-    else
-        echo "DEBUG: Command '$pkg_mgr_name $*' intercepted and redirected." >&2
     fi
 }
 
