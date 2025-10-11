@@ -2,7 +2,12 @@
 #
 # ZSH-TMUXDEV
 # Automatically runs pnpm/npm/yarn/bun/vite scripts in a dedicated tmux session,
-# creating a new window with a horizontal split for each script.
+# creating a new window with a split for each script.
+#
+# Configuration (optional, in your .zshrc):
+#   export ZSH_TMUXDEV_SESSION_NAME="MyDev" # Customize the tmux session name
+#   export ZSH_TMUXDEV_ATTACH="true"        # Auto-attach to the session after starting a task
+#   export ZSH_TMUXDEV_SPLIT_DIRECTION="-v" # Use "-v" for vertical split, "-h" for horizontal
 #
 # To install:
 #   - Oh My Zsh: Add 'ZSH-TMUXDEV' to your plugins array in .zshrc
@@ -21,21 +26,27 @@ if ! hash tmux 2>/dev/null; then
     npm() { command npm "$@"; }
     yarn() { command yarn "$@"; }
     bun() { command bun "$@"; }
-    vite() { command vite "$@"; } # Corrected vite fallback
+    vite() { command vite "$@"; }
     return 1
 fi
 
 _tmux_dev_wrapper_run_script() {
     local pkg_mgr="$1"
     local script_name="$3"
-    local session_name="TMUXDEV"
+    local session_name="${ZSH_TMUXDEV_SESSION_NAME:-TMUXDEV}"
+    local split_direction="${ZSH_TMUXDEV_SPLIT_DIRECTION:--h}"
     local current_dir="$(pwd)"
-    local full_command_to_execute="command \"$pkg_mgr\" ${@:2}"
 
-    local base_window_name="$(basename "$current_dir")-${script_name}-${pkg_mgr}"
+    # EDGE CASE FIX 1: Use an array to handle arguments with spaces/special characters robustly.
+    local -a command_parts
+    command_parts=("command" "$pkg_mgr" "${@:2}")
+
+    # EDGE CASE FIX 2: Sanitize directory name to remove invalid characters for tmux windows.
+    local sanitized_dir_name=$(basename "$current_dir" | tr -d '.:')
+    local base_window_name="${sanitized_dir_name}-${script_name}-${pkg_mgr}"
     local window_name="$base_window_name"
     local counter=0
-    while tmux has-window -t "${session_name}:${window_name}" 2>/dev/null; do
+    while tmux list-windows -t "$session_name" -F '#{window_name}' 2>/dev/null | grep -q "^${window_name}$"; do
         counter=$((counter + 1))
         window_name="${base_window_name}-${counter}"
     done
@@ -45,33 +56,42 @@ _tmux_dev_wrapper_run_script() {
         server_pane_title="${server_pane_title:0:22}..."
     fi
 
-    local top_pane_id # This will store the ID of our target pane.
-
+    local top_pane_id
     if ! tmux has-session -t "$session_name" 2>/dev/null; then
-        echo "ZSH-TMUXDEV: Creating new session '$session_name'..." >&2
-        # Create a new session and capture the ID of its first pane.
+        echo "ZSH-TMUXDEV: Creating new session '$session_name' with window '$window_name'..." >&2
         top_pane_id=$(tmux new-session -d -s "$session_name" -n "$window_name" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
     else
-        echo "ZSH-TMUXDEV: Using existing session '$session_name'. Creating new window '$window_name'..." >&2
-        # Create a new window and capture the ID of its first pane.
+        echo "ZSH-TMUXDEV: Using session '$session_name', creating new window '$window_name'..." >&2
         top_pane_id=$(tmux new-window -d -t "$session_name" -n "$window_name" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
     fi
 
-    # Now, split the window using the guaranteed correct pane ID.
-    local bottom_pane_id=$(tmux split-window -h -t "$top_pane_id" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
+    # EDGE CASE FIX 3: Check if pane creation was successful before proceeding.
+    if [[ -z "$top_pane_id" ]]; then
+        echo "ZSH-TMUXDEV: Error: Failed to create new tmux pane. Aborting." >&2
+        return 1
+    fi
 
-    # Send commands to the correct panes using their IDs.
+    local bottom_pane_id=$(tmux split-window "$split_direction" -t "$top_pane_id" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
+
     tmux send-keys -t "$top_pane_id" "clear" C-m
-    tmux send-keys -t "$top_pane_id" "$full_command_to_execute" C-m
+    tmux send-keys -t "$top_pane_id" "${command_parts[@]}" C-m # Use the robust array here
     tmux select-pane -t "$top_pane_id" -T "$server_pane_title"
 
     tmux send-keys -t "$bottom_pane_id" "clear" C-m
     tmux select-pane -t "$bottom_pane_id" -T "Interactive Shell"
 
-    # Optionally, focus the top pane where the script is running.
     tmux select-pane -t "$top_pane_id"
 
-    echo "ZSH-TMUXDEV: Task running in window '$window_name'. Your terminal is free." >&2
+    # EDGE CASE FIX 4: Use attach-session or switch-client depending on the context.
+    if [[ "$ZSH_TMUXDEV_ATTACH" == "true" ]]; then
+        if [[ -n "$TMUX" ]]; then
+            tmux switch-client -t "$session_name"
+        else
+            tmux attach-session -t "$session_name"
+        fi
+    fi
+
+    echo "ZSH-TMUXDEV: Task running in '$window_name'. Your terminal is now free." >&2
 }
 
 _tmux_dev_wrapper_pkg_mgr_handler() {
@@ -98,8 +118,18 @@ _tmux_dev_wrapper_pkg_mgr_handler() {
     fi
 }
 
+_tmux_dev_wrapper_kill_session() {
+    local session_name="${ZSH_TMUXDEV_SESSION_NAME:-TMUXDEV}"
+    if tmux has-session -t "$session_name" 2>/dev/null; then
+        tmux kill-session -t "$session_name" && echo "ZSH-TMUXDEV: Session '$session_name' killed."
+    else
+        echo "ZSH-TMUXDEV: Session '$session_name' not found."
+    fi
+}
+
 alias pnpm="_tmux_dev_wrapper_pkg_mgr_handler pnpm"
 alias npm="_tmux_dev_wrapper_pkg_mgr_handler npm"
 alias yarn="_tmux_dev_wrapper_pkg_mgr_handler yarn"
 alias bun="_tmux_dev_wrapper_pkg_mgr_handler bun"
 alias vite="_tmux_dev_wrapper_pkg_mgr_handler vite"
+alias tmuxdev-kill="_tmux_dev_wrapper_kill_session"
