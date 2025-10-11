@@ -45,20 +45,22 @@ _tmux_dev_wrapper_run_script() {
         server_pane_title="${server_pane_title:0:22}..."
     fi
 
+    local top_pane_id # This will store the ID of our target pane.
+
     if ! tmux has-session -t "$session_name" 2>/dev/null; then
-        echo "ZSH-TMUXDEV: TMUXDEV session '$session_name' does not exist. Creating a new session." >&2
-        tmux new-session -d -s "$session_name" -n "$window_name" -c "$current_dir" "zsh -l"
+        echo "ZSH-TMUXDEV: Creating new session '$session_name'..." >&2
+        # Create a new session and capture the ID of its first pane.
+        top_pane_id=$(tmux new-session -d -s "$session_name" -n "$window_name" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
     else
-        echo "ZSH-TMUXDEV: TMUXDEV session '$session_name' exists. Creating new window '$window_name'." >&2
-        tmux new-window -d -t "$session_name" -n "$window_name" -c "$current_dir" "zsh -l"
+        echo "ZSH-TMUXDEV: Using existing session '$session_name'. Creating new window '$window_name'..." >&2
+        # Create a new window and capture the ID of its first pane.
+        top_pane_id=$(tmux new-window -d -t "$session_name" -n "$window_name" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
     fi
 
-    local new_window_target="${session_name}:${window_name}"
-    local top_pane_id=$(tmux list-panes -t "$new_window_target" -F '#{pane_id}' | head -n 1)
+    # Now, split the window using the guaranteed correct pane ID.
+    local bottom_pane_id=$(tmux split-window -h -t "$top_pane_id" -c "$current_dir" "zsh -l" -P -F '#{pane_id}')
 
-    tmux split-window -h -t "$top_pane_id" -c "$current_dir" "zsh -l"
-    local bottom_pane_id=$(tmux list-panes -t "$new_window_target" -F '#{pane_id}' | tail -n 1)
-
+    # Send commands to the correct panes using their IDs.
     tmux send-keys -t "$top_pane_id" "clear" C-m
     tmux send-keys -t "$top_pane_id" "$full_command_to_execute" C-m
     tmux select-pane -t "$top_pane_id" -T "$server_pane_title"
@@ -66,9 +68,10 @@ _tmux_dev_wrapper_run_script() {
     tmux send-keys -t "$bottom_pane_id" "clear" C-m
     tmux select-pane -t "$bottom_pane_id" -T "Interactive Shell"
 
+    # Optionally, focus the top pane where the script is running.
     tmux select-pane -t "$top_pane_id"
 
-    echo "ZSH-TMUXDEV: Command sent. Your current terminal is now free." >&2
+    echo "ZSH-TMUXDEV: Task running in window '$window_name'. Your terminal is free." >&2
 }
 
 _tmux_dev_wrapper_pkg_mgr_handler() {
